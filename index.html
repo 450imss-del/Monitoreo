@@ -3,69 +3,70 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alerta Sísmica México - Monitor en Tiempo Real</title>
+<title>Alerta Sísmica México</title>
 
-<!-- ESTILOS -->
+<!-- Leaflet MAPA -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
 <style>
-* {
-    box-sizing: border-box;
-    font-family: Arial, sans-serif;
-}
+* { box-sizing: border-box; font-family: Arial, sans-serif; }
 
 body {
-    margin: 0;
-    padding: 0;
-    background: #0f172a;
-    color: #fff;
+  margin: 0;
+  background: #0f172a;
+  color: white;
 }
 
 header {
-    background: #111827;
-    padding: 15px;
-    text-align: center;
-    font-size: 20px;
-    font-weight: bold;
-    border-bottom: 2px solid #22c55e;
+  background: #111827;
+  padding: 12px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: bold;
+  border-bottom: 2px solid #22c55e;
 }
 
 .container {
-    padding: 15px;
-    max-width: 900px;
-    margin: auto;
+  padding: 15px;
+  max-width: 1000px;
+  margin: auto;
 }
 
 button {
-    padding: 12px 18px;
-    border: none;
-    border-radius: 8px;
-    background: #22c55e;
-    color: black;
-    font-weight: bold;
-    cursor: pointer;
-    font-size: 16px;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 6px;
+  background: #22c55e;
+  font-weight: bold;
+  cursor: pointer;
 }
 
-button:hover {
-    background: #16a34a;
+button:hover { background: #16a34a; }
+
+#status {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #9ca3af;
 }
 
-.status {
-    margin-top: 10px;
-    font-size: 14px;
-    color: #9ca3af;
+#map {
+  height: 400px;
+  border-radius: 12px;
+  margin-top: 15px;
+  border: 2px solid #22c55e;
 }
 
 ul {
-    list-style: none;
-    padding: 0;
+  list-style: none;
+  padding: 0;
 }
 
 li {
-    margin: 10px 0;
-    padding: 12px;
-    border-radius: 8px;
-    background: #111827;
-    border-left: 6px solid gray;
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #111827;
+  border-left: 6px solid gray;
 }
 
 .light { border-left-color: #22c55e; }
@@ -73,114 +74,169 @@ li {
 .strong { border-left-color: #ef4444; }
 
 footer {
-    text-align: center;
-    padding: 10px;
-    font-size: 12px;
-    color: #6b7280;
+  text-align: center;
+  padding: 10px;
+  font-size: 12px;
+  color: #6b7280;
 }
 </style>
 </head>
 
 <body>
 
-<header>🌎 Alerta Sísmica México - Monitoreo en Tiempo Real</header>
+<header>🌎 Alerta Sísmica México - Monitor en Tiempo Real</header>
 
 <div class="container">
 
-<button onclick="fetchEarthquakes()">🔄 Actualizar ahora</button>
-<div class="status" id="status">Obteniendo ubicación...</div>
+<button onclick="fetchEarthquakes()">🔄 Actualizar</button>
+<div id="status">Obteniendo ubicación...</div>
 
+<div id="map"></div>
+
+<h3>📋 Sismos recientes</h3>
 <ul id="earthquakeList"></ul>
 
 </div>
 
 <footer>
-Datos: USGS | Proyecto educativo | No reemplaza sistemas oficiales (SASMEX)
+Datos: USGS | Proyecto educativo | No reemplaza sistemas oficiales SASMEX
 </footer>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 let userLocation = null;
+let map;
+let markers = [];
 
-// Obtener ubicación
+// ================== MAPA ===================
+function initMap() {
+  map = L.map("map").setView([19.4326, -99.1332], 5);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
+  }).addTo(map);
+}
+
+// ================== GEOLOCALIZACIÓN ===================
 function getUserLocation() {
-    if (!navigator.geolocation) {
-        document.getElementById("status").textContent = "❌ Geolocalización no soportada.";
-        return;
-    }
+  if (!navigator.geolocation) {
+    document.getElementById("status").textContent = "❌ GPS no soportado";
+    return;
+  }
 
-    navigator.geolocation.getCurrentPosition(pos => {
-        userLocation = {
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude
-        };
-        document.getElementById("status").textContent = 
-            `📍 Ubicación detectada: ${userLocation.lat.toFixed(2)}, ${userLocation.lon.toFixed(2)}`;
-        fetchEarthquakes();
-    }, err => {
-        document.getElementById("status").textContent = "⚠️ No se pudo obtener ubicación.";
-    });
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLocation = {
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude
+    };
+    document.getElementById("status").textContent =
+      `📍 Ubicación: ${userLocation.lat.toFixed(2)}, ${userLocation.lon.toFixed(2)}`;
+
+    L.marker([userLocation.lat, userLocation.lon]).addTo(map)
+      .bindPopup("📍 Tu ubicación")
+      .openPopup();
+
+    fetchEarthquakes();
+  }, () => {
+    document.getElementById("status").textContent = "⚠️ No se pudo obtener GPS";
+  });
 }
 
-// Distancia Haversine
+// ================== DISTANCIA ===================
 function distanceKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
-// Obtener sismos
+// ================== OBTENER SISMOS ===================
 async function fetchEarthquakes() {
-    const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
-    const list = document.getElementById("earthquakeList");
-    list.innerHTML = "";
+  const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+  const list = document.getElementById("earthquakeList");
+  list.innerHTML = "";
 
-    try {
-        const res = await fetch(url);
-        const data = await res.json();
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
 
-        if (!userLocation) {
-            document.getElementById("status").textContent = "⚠️ Activa GPS.";
-            return;
-        }
+    addEarthquakesToMap(data);
 
-        data.features.forEach(eq => {
-            const mag = eq.properties.mag;
-            const place = eq.properties.place;
-            const lat = eq.geometry.coordinates[1];
-            const lon = eq.geometry.coordinates[0];
+    data.features.forEach(eq => {
+      const mag = eq.properties.mag;
+      const place = eq.properties.place;
+      const lat = eq.geometry.coordinates[1];
+      const lon = eq.geometry.coordinates[0];
 
-            // Bounding box México
-            if (lat < 14 || lat > 33 || lon < -118 || lon > -86) return;
+      // SOLO MÉXICO
+      if (lat < 14 || lat > 33 || lon < -118 || lon > -86) return;
 
-            const dist = distanceKm(userLocation.lat, userLocation.lon, lat, lon);
-            const time = new Date(eq.properties.time).toLocaleString("es-MX");
+      let dist = userLocation ? distanceKm(userLocation.lat, userLocation.lon, lat, lon) : 0;
+      const time = new Date(eq.properties.time).toLocaleString("es-MX");
 
-            const li = document.createElement("li");
-            li.innerHTML = `
-                <b>Magnitud:</b> ${mag} <br>
-                <b>Zona:</b> ${place} <br>
-                <b>Distancia:</b> ${dist.toFixed(1)} km <br>
-                <b>Hora:</b> ${time}
-            `;
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <b>Magnitud:</b> ${mag}<br>
+        <b>Lugar:</b> ${place}<br>
+        <b>Distancia:</b> ${dist.toFixed(1)} km<br>
+        <b>Hora:</b> ${time}
+      `;
 
-            if (mag < 4) li.classList.add("light");
-            else if (mag < 6) li.classList.add("moderate");
-            else li.classList.add("strong");
+      if (mag < 4) li.classList.add("light");
+      else if (mag < 6) li.classList.add("moderate");
+      else li.classList.add("strong");
 
-            list.appendChild(li);
-        });
+      list.appendChild(li);
 
-    } catch (e) {
-        document.getElementById("status").textContent = "❌ Error cargando datos.";
-        console.error(e);
-    }
+      // ALERTA FUERTE
+      if (mag >= 5 && dist < 150) {
+        alert("🚨 SISMO FUERTE CERCA: Magnitud " + mag);
+      }
+    });
+
+  } catch (e) {
+    console.error(e);
+    document.getElementById("status").textContent = "❌ Error cargando datos";
+  }
 }
 
-// Auto actualización cada 60s
+// ================== MAPA MARCADORES ===================
+function addEarthquakesToMap(data) {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  data.features.forEach(eq => {
+    const mag = eq.properties.mag;
+    const place = eq.properties.place;
+    const lat = eq.geometry.coordinates[1];
+    const lon = eq.geometry.coordinates[0];
+
+    if (lat < 14 || lat > 33 || lon < -118 || lon > -86) return;
+
+    let color = "green";
+    if (mag >= 4) color = "orange";
+    if (mag >= 6) color = "red";
+
+    const marker = L.circleMarker([lat, lon], {
+      radius: mag * 2,
+      color: color,
+      fillOpacity: 0.7
+    }).addTo(map);
+
+    marker.bindPopup(`<b>Magnitud:</b> ${mag}<br>${place}`);
+
+    markers.push(marker);
+  });
+}
+
+// ================== AUTO UPDATE ===================
 setInterval(fetchEarthquakes, 60000);
 
+// INICIAR
+initMap();
 getUserLocation();
 </script>
 
