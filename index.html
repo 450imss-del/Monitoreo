@@ -2,10 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>MONITOREO SÍSMICO TV</title>
+<title>Panel Sísmico Global TV</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- LEAFLET MAPA -->
+<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
@@ -13,56 +13,68 @@
 body {
   margin: 0;
   background: #000;
-  color: #0f0;
+  color: #00ff9c;
   font-family: Arial, sans-serif;
 }
 
 header {
-  background: #111;
+  background: #050505;
   padding: 10px;
+  text-align: center;
   font-size: 22px;
   font-weight: bold;
-  text-align: center;
   border-bottom: 2px solid red;
 }
 
-#panel {
+#grid {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  height: 90vh;
+  height: 92vh;
 }
 
 #map {
   height: 100%;
 }
 
-#info {
-  padding: 15px;
+#panel {
   background: #050505;
   border-left: 2px solid red;
+  padding: 10px;
+  overflow-y: auto;
 }
 
 .card {
   background: #111;
+  border: 1px solid #00ff9c;
   padding: 10px;
   margin-bottom: 10px;
-  border: 1px solid #0f0;
-  border-radius: 5px;
+  border-radius: 6px;
+}
+
+h3 {
+  margin: 0 0 5px;
+  color: #fff;
 }
 
 button {
+  width: 100%;
   padding: 12px;
-  font-size: 16px;
   background: red;
   border: none;
   color: white;
-  width: 100%;
-  cursor: pointer;
+  font-size: 16px;
   font-weight: bold;
+  cursor: pointer;
 }
 
 button:hover {
   background: #ff3333;
+}
+
+.alerta {
+  color: red;
+  font-size: 20px;
+  font-weight: bold;
 }
 
 #ticker {
@@ -87,31 +99,25 @@ button:hover {
   from { transform: translateX(0); }
   to { transform: translateX(-100%); }
 }
-
-.alerta {
-  color: red;
-  font-size: 22px;
-  font-weight: bold;
-}
 </style>
 </head>
 
 <body>
 
-<header>🌎 PANEL DE MONITOREO SÍSMICO – MODO TV NOTICIAS</header>
+<header>🌍 PANEL GLOBAL DE MONITOREO SÍSMICO — MODO TV NOTICIAS</header>
 
-<div id="panel">
+<div id="grid">
   <div id="map"></div>
 
-  <div id="info">
+  <div id="panel">
     <div class="card">
-      <h3>📡 Último Sismo</h3>
-      <div id="datos"></div>
+      <h3>📡 Eventos Sísmicos</h3>
+      <div id="lista"></div>
     </div>
 
     <div class="card">
-      <h3>⚠️ Estado del Sistema</h3>
-      <div id="estado">Activo en tiempo real</div>
+      <h3>⚠️ Estado</h3>
+      <div id="estado">Sistema activo en tiempo real</div>
     </div>
 
     <div class="card">
@@ -120,71 +126,68 @@ button:hover {
   </div>
 </div>
 
-<div id="ticker"><span id="tickerText">Cargando noticias sísmicas...</span></div>
+<div id="ticker"><span id="tickerText">Cargando ticker sísmico...</span></div>
 
 <script>
-// ================== API URLs ==================
-const API = "https://monitoreo-api.onrender.com/api/sismo";
-const SIM = "https://monitoreo-api.onrender.com/api/simulacro";
-const TICKER = "https://monitoreo-api.onrender.com/api/ticker";
+const API = "https://monitoreo-api-6evu.onrender.com/api/sismo";
+const SIM = "https://monitoreo-api-6evu.onrender.com/api/simulacro";
+const TICKER = "https://monitoreo-api-6evu.onrender.com/api/ticker";
 
-// ================== MAPA ==================
-let map = L.map('map').setView([19.43, -99.13], 6);
+// MAPA
+let map = L.map('map').setView([20, 0], 2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-let marker;
+let markers = [];
 
-// ================== CARGAR SISMO ==================
-async function cargarSismo() {
+// ================== CARGAR SISMOS ==================
+async function cargar() {
   let r = await fetch(API);
-  let d = await r.json();
+  let data = await r.json();
+  let html = "";
 
-  mostrarDatos(d);
-  ponerMarker(d);
-  detectarAlerta(d);
-}
+  // limpiar markers
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
 
-// ================== MOSTRAR DATOS ==================
-function mostrarDatos(d) {
-  document.getElementById("datos").innerHTML = `
-    Fuente: ${d.fuente}<br>
-    Magnitud: <b>${d.magnitud}</b><br>
-    Profundidad: ${d.profundidad} km<br>
-    Hora UTC: ${d.hora}<br>
-    Lat: ${d.lat}<br>
-    Lon: ${d.lon}
-  `;
-}
+  data.forEach(d => {
+    html += `
+      <div>
+      🌐 <b>${d.fuente}</b><br>
+      Magnitud: ${d.magnitud}<br>
+      Lugar: ${d.lugar}<br>
+      Hora: ${d.hora}<br><hr>
+      </div>
+    `;
 
-// ================== MARKER MAPA ==================
-function ponerMarker(d) {
-  if (marker) map.removeLayer(marker);
-  marker = L.marker([d.lat, d.lon]).addTo(map)
-    .bindPopup(`Magnitud ${d.magnitud}`).openPopup();
-  map.setView([d.lat, d.lon], 6);
-}
+    if(d.lat && d.lon){
+      let color = d.magnitud >= 6 ? "red" : "green";
+      let m = L.circleMarker([d.lat, d.lon], {
+        radius: 8,
+        color: color,
+        fillOpacity: 0.8
+      }).addTo(map)
+      .bindPopup(`${d.fuente}<br>M${d.magnitud}<br>${d.lugar}`);
+      markers.push(m);
+    }
 
-// ================== ALERTA FUERTE ==================
-function detectarAlerta(d) {
-  if (d.magnitud >= 6) {
-    document.getElementById("estado").innerHTML = 
-      "<div class='alerta'>🚨 ALERTA SISMO FUERTE</div>";
-    let audio = new Audio("https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3");
-    audio.play();
-  } else {
-    document.getElementById("estado").innerHTML = "Sin alertas críticas";
-  }
+    // ALERTA
+    if(d.magnitud >= 6){
+      document.getElementById("estado").innerHTML = "<div class='alerta'>🚨 SISMO FUERTE DETECTADO</div>";
+      new Audio("https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3").play();
+    }
+  });
+
+  document.getElementById("lista").innerHTML = html;
 }
 
 // ================== SIMULACRO ==================
 async function simulacro() {
   let r = await fetch(SIM);
   let d = await r.json();
-  mostrarDatos(d);
-  ponerMarker(d);
   alert("SIMULACRO ACTIVADO");
+  cargar();
 }
 
-// ================== TICKER NOTICIAS ==================
+// ================== TICKER ==================
 async function cargarTicker() {
   let r = await fetch(TICKER);
   let d = await r.json();
@@ -192,13 +195,11 @@ async function cargarTicker() {
 }
 
 // ================== AUTO REFRESH ==================
-cargarSismo();
+cargar();
 cargarTicker();
-
-setInterval(cargarSismo, 5000);   // cada 5 segundos
-setInterval(cargarTicker, 8000); // ticker
-
+setInterval(cargar, 5000);
+setInterval(cargarTicker, 8000);
 </script>
 
 </body>
-  </html>
+</html>
