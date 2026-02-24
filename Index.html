@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoreo de Sismos en México</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+        h1 {
+            color: #333;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+        .light {
+            border-left: 5px solid green;
+        }
+        .moderate {
+            border-left: 5px solid orange;
+        }
+        .strong {
+            border-left: 5px solid red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Monitoreo de Sismos en México</h1>
+    <button onclick="fetchEarthquakes()">Actualizar Datos</button>
+    <ul id="earthquakeList" aria-live="polite"></ul>
+
+    <script>
+        let userLocation;
+
+        // Función para obtener la ubicación del usuario
+        function getUserLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    userLocation = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    };
+                    fetchEarthquakes(); // Llama a la función después de obtener la ubicación
+                }, showError);
+            } else {
+                alert("La geolocalización no es compatible con este navegador.");
+            }
+        }
+
+        // Función para mostrar errores de geolocalización
+        function showError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    alert("No se permite la geolocalización.");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    alert("La ubicación no está disponible.");
+                    break;
+                case error.TIMEOUT:
+                    alert("La solicitud de geolocalización ha expirado.");
+                    break;
+                case error.UNKNOWN_ERROR:
+                    alert("Se ha producido un error desconocido.");
+                    break;
+            }
+        }
+
+        // Función para calcular la distancia entre dos puntos
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radio de la Tierra en kilómetros
+            const dLat = (lat2 - lat1) * (Math.PI / 180);
+            const dLon = (lon2 - lon1) * (Math.PI / 180);
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; // Distancia en kilómetros
+        }
+
+        // Función para obtener y filtrar los sismos
+        async function fetchEarthquakes() {
+            const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Error en la recuperación de datos');
+                
+                const data = await response.json();
+                const list = document.getElementById('earthquakeList');
+                list.innerHTML = ''; // Limpiar la lista antes de agregar nuevos datos
+
+                if (!userLocation) {
+                    alert("Por favor, habilita la geolocalización en tu navegador.");
+                    return;
+                }
+
+                data.features.forEach(earthquake => {
+                    const place = earthquake.properties.place;
+                    const magnitude = earthquake.properties.mag;
+                    const lat = earthquake.geometry.coordinates[1];
+                    const lon = earthquake.geometry.coordinates[0];
+                    const distance = calculateDistance(userLocation.latitude, userLocation.longitude, lat, lon);
+
+                    // Filtrar sismos que contienen "México" y están dentro de 200 km
+                    if ((place.includes("Mexico") || place.includes("México")) && distance <= 200) {
+                        const time = new Date(earthquake.properties.time).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+
+                        const listItem = document.createElement('li');
+                        listItem.textContent = `Sismo de magnitud ${magnitude} en ${place} a ${distance.toFixed(2)} km de tu ubicación a las ${time}`;
+                        
+                        // Clasificación de magnitudes
+                        if (magnitude < 4.0) {
+                            listItem.classList.add('light');
+                        } else if (magnitude < 6.0) {
+                            listItem.classList.add('moderate');
+                        } else {
+                            listItem.classList.add('strong');
+                        }
+                        
+                        list.appendChild(listItem);
+                    }
+                });
+            } catch (error) {
+                console.error(error);
+                document.getElementById('earthquakeList').textContent = 'No se pudieron cargar los datos.';
+            }
+        }
+
+        getUserLocation(); // Llama a la función para obtener la ubicación del usuario
+    </script>
+</body>
+</html>
