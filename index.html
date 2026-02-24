@@ -2,90 +2,172 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Centro de Monitoreo Sísmico</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
 body {
-  margin: 0;
-  background: black;
-  color: #00ff9c;
-  font-family: monospace;
+    margin: 0;
+    background: #0b1020;
+    color: white;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
 }
-header {
-  padding: 10px;
-  background: #001a0f;
-  font-size: 24px;
-  display: flex;
-  justify-content: space-between;
+
+/* TOP BAR */
+#topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: #11172a;
+    border-bottom: 2px solid #1f2a44;
 }
+
+#status {
+    font-size: 14px;
+    color: #00ff88;
+}
+
+#clock {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+/* LAYOUT */
+#container {
+    display: flex;
+    height: calc(100vh - 50px);
+}
+
+/* MAP */
 #map {
-  height: 80vh;
+    flex: 3;
 }
-#panel {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
+
+/* SIDE PANEL */
+#side {
+    flex: 1;
+    background: #11172a;
+    padding: 10px;
+    border-left: 2px solid #1f2a44;
+    display: flex;
+    flex-direction: column;
 }
-#list {
-  padding: 10px;
-  border-left: 2px solid #00ff9c;
+
+/* ALERT BOX */
+#alertBox {
+    background: #132;
+    padding: 10px;
+    font-size: 18px;
+    border-radius: 8px;
+    margin-bottom: 10px;
 }
-li {
-  margin: 5px 0;
+
+/* EVENTS */
+#events {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 14px;
+}
+
+/* BIG ALERT FLASH */
+.flash {
+    animation: flash 1s infinite;
+}
+
+@keyframes flash {
+    0% { background: #600; }
+    50% { background: #000; }
+    100% { background: #600; }
 }
 </style>
 </head>
+
 <body>
 
-<header>
-  <div>🛰️ Centro de Monitoreo Sísmico México</div>
-  <div id="clock"></div>
-</header>
-
-<div id="panel">
-  <div id="map"></div>
-  <div id="list">
-    <h3>Últimos sismos</h3>
-    <ul id="eqList"></ul>
-  </div>
+<div id="topbar">
+    <div>📡 Centro de Monitoreo Sísmico - México</div>
+    <div id="status">Sistema activo</div>
+    <div id="clock"></div>
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="container">
+    <div id="map"></div>
+    <div id="side">
+        <div id="alertBox">Último sismo: cargando...</div>
+        <div id="events"></div>
+    </div>
+</div>
+
+<audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
+
 <script>
-let map = L.map("map").setView([19.4,-99.1],5);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+// MAPA
+const map = L.map('map', { zoomControl: false }).setView([19.4326, -99.1332], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// Reloj
-setInterval(()=> {
- document.getElementById("clock").innerText = new Date().toLocaleTimeString();
-},1000);
+let markers = [];
 
-// Sismos
-async function loadEQ(){
- const res = await fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson");
- const data = await res.json();
- const list = document.getElementById("eqList");
- list.innerHTML="";
+// RELOJ
+function updateClock() {
+    document.getElementById("clock").innerText = new Date().toLocaleString();
+}
+setInterval(updateClock, 1000);
+updateClock();
 
- data.features.slice(0,10).forEach(eq=>{
-   const mag = eq.properties.mag;
-   const place = eq.properties.place;
-   const lat = eq.geometry.coordinates[1];
-   const lon = eq.geometry.coordinates[0];
+// CARGAR SISMOS
+async function loadQuakes() {
+    const res = await fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson");
+    const data = await res.json();
 
-   if(lat<14||lat>33||lon<-118||lon>-86) return;
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
 
-   L.circleMarker([lat,lon],{radius:mag*2,color:"red"}).addTo(map);
+    let list = "";
+    let last = data.features[0];
 
-   const li=document.createElement("li");
-   li.textContent=`M ${mag} - ${place}`;
-   list.appendChild(li);
- });
+    data.features.forEach(q => {
+        const [lon, lat] = q.geometry.coordinates;
+        const mag = q.properties.mag;
+        const place = q.properties.place;
+        const time = new Date(q.properties.time).toLocaleString();
+
+        let color = mag < 3 ? "green" : mag < 5 ? "orange" : "red";
+
+        const marker = L.circleMarker([lat, lon], {
+            radius: mag * 2,
+            color: color,
+            fillOpacity: 0.8
+        }).addTo(map);
+
+        marker.bindPopup(`M ${mag} - ${place}<br>${time}`);
+        markers.push(marker);
+
+        list += `<div>🔴 M${mag} - ${place}</div>`;
+    });
+
+    // PANEL ÚLTIMO SISMO
+    const mag = last.properties.mag;
+    const place = last.properties.place;
+    document.getElementById("alertBox").innerHTML = `Último sismo: <b>M${mag}</b> - ${place}`;
+
+    // ALERTA FUERTE
+    if (mag >= 6) {
+        document.body.classList.add("flash");
+        document.getElementById("alarm").play();
+    } else {
+        document.body.classList.remove("flash");
+    }
+
+    document.getElementById("events").innerHTML = list;
 }
 
-loadEQ();
-setInterval(loadEQ,60000);
+loadQuakes();
+setInterval(loadQuakes, 60000); // cada minuto
 </script>
 
 </body>
