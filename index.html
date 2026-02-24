@@ -2,172 +2,230 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Centro de Monitoreo Sísmico</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Centro de Monitoreo Sísmico</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body {
-    margin: 0;
-    background: #0b1020;
-    color: white;
-    font-family: Arial, sans-serif;
-    overflow: hidden;
+body{
+  margin:0;
+  background:#000;
+  color:white;
+  font-family: Arial, sans-serif;
+  overflow:hidden;
 }
 
-/* TOP BAR */
-#topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 20px;
-    background: #11172a;
-    border-bottom: 2px solid #1f2a44;
+/* Barra superior */
+#statusBar{
+  background:#0a0;
+  padding:10px;
+  font-size:22px;
+  font-weight:bold;
+  text-align:center;
+}
+.alerta{
+  background:red !important;
 }
 
-#status {
-    font-size: 14px;
-    color: #00ff88;
+/* Layout */
+#container{
+  display:grid;
+  grid-template-columns: 70% 30%;
+  height:calc(100vh - 60px);
 }
 
-#clock {
-    font-size: 20px;
-    font-weight: bold;
+/* Mapa */
+#map{
+  height:100%;
 }
 
-/* LAYOUT */
-#container {
-    display: flex;
-    height: calc(100vh - 50px);
+/* Panel lateral */
+#panel{
+  padding:10px;
+  border-left:2px solid #333;
+  font-size:16px;
 }
 
-/* MAP */
-#map {
-    flex: 3;
+/* Lista */
+li{
+  border-bottom:1px solid #333;
+  padding:6px;
 }
 
-/* SIDE PANEL */
-#side {
-    flex: 1;
-    background: #11172a;
-    padding: 10px;
-    border-left: 2px solid #1f2a44;
-    display: flex;
-    flex-direction: column;
+/* Reloj */
+#clock{
+  font-size:20px;
+  text-align:center;
+  margin-bottom:10px;
 }
 
-/* ALERT BOX */
-#alertBox {
-    background: #132;
-    padding: 10px;
-    font-size: 18px;
-    border-radius: 8px;
-    margin-bottom: 10px;
+/* Ticker noticias */
+#ticker{
+  position:fixed;
+  bottom:0;
+  width:100%;
+  background:black;
+  color:#00ff00;
+  font-size:20px;
+  padding:5px 0;
+  overflow:hidden;
+  white-space:nowrap;
+}
+#tickerText{
+  display:inline-block;
+  padding-left:100%;
+  animation: scroll 25s linear infinite;
+}
+@keyframes scroll{
+  from{ transform:translateX(0%); }
+  to{ transform:translateX(-100%); }
 }
 
-/* EVENTS */
-#events {
-    flex: 1;
-    overflow-y: auto;
-    font-size: 14px;
+/* Botón simulacro */
+#simBtn{
+  position:fixed;
+  bottom:50px;
+  right:20px;
+  background:red;
+  color:white;
+  border:none;
+  padding:12px 18px;
+  font-size:16px;
+  border-radius:6px;
+  cursor:pointer;
+  z-index:9999;
 }
+#simBtn:hover{ background:darkred; }
 
-/* BIG ALERT FLASH */
-.flash {
-    animation: flash 1s infinite;
+/* Parpadeo alerta */
+.flash{
+  animation: flash 0.5s infinite alternate;
 }
-
-@keyframes flash {
-    0% { background: #600; }
-    50% { background: #000; }
-    100% { background: #600; }
+@keyframes flash{
+  from{background:#000;}
+  to{background:#400;}
 }
 </style>
 </head>
 
 <body>
 
-<div id="topbar">
-    <div>📡 Centro de Monitoreo Sísmico - México</div>
-    <div id="status">Sistema activo</div>
-    <div id="clock"></div>
-</div>
+<div id="statusBar">🟢 ESTADO ACTUAL: SIN ALERTAS</div>
 
 <div id="container">
-    <div id="map"></div>
-    <div id="side">
-        <div id="alertBox">Último sismo: cargando...</div>
-        <div id="events"></div>
-    </div>
+  <div id="map"></div>
+  <div id="panel">
+    <div id="clock"></div>
+    <h3>📊 Resumen Hoy</h3>
+    <div id="summary">Cargando...</div>
+    <h3>📍 Últimos Sismos</h3>
+    <ul id="quakeList"></ul>
+  </div>
 </div>
+
+<div id="ticker">
+  <span id="tickerText">Sistema de monitoreo sísmico en tiempo real - USGS</span>
+</div>
+
+<button id="simBtn" onclick="simulateQuake()">🚨 SIMULAR SISMO</button>
 
 <audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
 <script>
 // MAPA
-const map = L.map('map', { zoomControl: false }).setView([19.4326, -99.1332], 5);
+const map = L.map('map').setView([19.4326, -99.1332], 5);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let markers = [];
 
 // RELOJ
-function updateClock() {
-    document.getElementById("clock").innerText = new Date().toLocaleString();
-}
-setInterval(updateClock, 1000);
-updateClock();
+setInterval(()=>{
+  document.getElementById("clock").innerHTML = "🕒 " + new Date().toLocaleString();
+},1000);
 
 // CARGAR SISMOS
-async function loadQuakes() {
-    const res = await fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson");
-    const data = await res.json();
+async function loadQuakes(){
+  const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+  const res = await fetch(url);
+  const data = await res.json();
 
-    markers.forEach(m => map.removeLayer(m));
-    markers = [];
+  markers.forEach(m=>map.removeLayer(m));
+  markers = [];
 
-    let list = "";
-    let last = data.features[0];
+  let maxMag = 0;
+  let count = 0;
+  let lastText = "";
 
-    data.features.forEach(q => {
-        const [lon, lat] = q.geometry.coordinates;
-        const mag = q.properties.mag;
-        const place = q.properties.place;
-        const time = new Date(q.properties.time).toLocaleString();
+  const list = document.getElementById("quakeList");
+  list.innerHTML = "";
 
-        let color = mag < 3 ? "green" : mag < 5 ? "orange" : "red";
+  data.features.forEach(q=>{
+    const mag = q.properties.mag;
+    const place = q.properties.place;
+    const time = new Date(q.properties.time).toLocaleString("es-MX");
+    const lat = q.geometry.coordinates[1];
+    const lon = q.geometry.coordinates[0];
 
-        const marker = L.circleMarker([lat, lon], {
-            radius: mag * 2,
-            color: color,
-            fillOpacity: 0.8
-        }).addTo(map);
+    if(place.includes("Mexico") || place.includes("México")){
+      count++;
+      if(mag > maxMag) maxMag = mag;
+      lastText = `ÚLTIMO SISMO: M${mag} en ${place} - ${time}`;
 
-        marker.bindPopup(`M ${mag} - ${place}<br>${time}`);
-        markers.push(marker);
+      let color = mag < 3 ? "green" : mag < 5 ? "yellow" : mag < 6 ? "orange" : "red";
 
-        list += `<div>🔴 M${mag} - ${place}</div>`;
-    });
+      const marker = L.circleMarker([lat,lon],{
+        radius:6,
+        color:color,
+        fillColor:color,
+        fillOpacity:0.8
+      }).addTo(map)
+      .bindPopup(`M${mag} - ${place}`);
 
-    // PANEL ÚLTIMO SISMO
-    const mag = last.properties.mag;
-    const place = last.properties.place;
-    document.getElementById("alertBox").innerHTML = `Último sismo: <b>M${mag}</b> - ${place}`;
+      markers.push(marker);
 
-    // ALERTA FUERTE
-    if (mag >= 6) {
-        document.body.classList.add("flash");
-        document.getElementById("alarm").play();
-    } else {
-        document.body.classList.remove("flash");
+      const li = document.createElement("li");
+      li.innerHTML = `M${mag} - ${place} <br><small>${time}</small>`;
+      li.style.color = color;
+      list.appendChild(li);
+
+      // ALERTA AUTOMÁTICA
+      if(mag >= 6){
+        activateAlert(mag, place);
+      }
     }
+  });
 
-    document.getElementById("events").innerHTML = list;
+  document.getElementById("summary").innerHTML =
+    `🌎 Sismos hoy: ${count}<br>⚠️ Mayor magnitud: ${maxMag}`;
+
+  document.getElementById("tickerText").innerHTML = lastText || "Sin sismos recientes";
 }
 
+// ALERTA REAL
+function activateAlert(mag, place){
+  const status = document.getElementById("statusBar");
+  status.classList.add("alerta");
+  status.innerHTML = `🚨 ALERTA SÍSMICA M${mag} - ${place}`;
+  document.body.classList.add("flash");
+  document.getElementById("alarm").play();
+}
+
+// SIMULACRO
+function simulateQuake(){
+  activateAlert(7.5, "SIMULADO CDMX");
+  setTimeout(()=>{
+    document.getElementById("statusBar").classList.remove("alerta");
+    document.getElementById("statusBar").innerHTML="🟢 ESTADO ACTUAL: SIN ALERTAS";
+    document.body.classList.remove("flash");
+  },10000);
+}
+
+// REFRESH CADA 1 MINUTO
 loadQuakes();
-setInterval(loadQuakes, 60000); // cada minuto
+setInterval(loadQuakes, 60000);
 </script>
 
 </body>
