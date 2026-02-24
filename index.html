@@ -3,241 +3,89 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alerta Sísmica México</title>
-
-<!-- Leaflet MAPA -->
+<title>Centro de Monitoreo Sísmico</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-* { box-sizing: border-box; font-family: Arial, sans-serif; }
-
 body {
   margin: 0;
-  background: #0f172a;
-  color: white;
+  background: black;
+  color: #00ff9c;
+  font-family: monospace;
 }
-
 header {
-  background: #111827;
-  padding: 12px;
-  text-align: center;
-  font-size: 20px;
-  font-weight: bold;
-  border-bottom: 2px solid #22c55e;
+  padding: 10px;
+  background: #001a0f;
+  font-size: 24px;
+  display: flex;
+  justify-content: space-between;
 }
-
-.container {
-  padding: 15px;
-  max-width: 1000px;
-  margin: auto;
-}
-
-button {
-  padding: 10px 15px;
-  border: none;
-  border-radius: 6px;
-  background: #22c55e;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-button:hover { background: #16a34a; }
-
-#status {
-  margin-top: 8px;
-  font-size: 14px;
-  color: #9ca3af;
-}
-
 #map {
-  height: 400px;
-  border-radius: 12px;
-  margin-top: 15px;
-  border: 2px solid #22c55e;
+  height: 80vh;
 }
-
-ul {
-  list-style: none;
-  padding: 0;
+#panel {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
 }
-
+#list {
+  padding: 10px;
+  border-left: 2px solid #00ff9c;
+}
 li {
-  margin: 10px 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: #111827;
-  border-left: 6px solid gray;
-}
-
-.light { border-left-color: #22c55e; }
-.moderate { border-left-color: #f59e0b; }
-.strong { border-left-color: #ef4444; }
-
-footer {
-  text-align: center;
-  padding: 10px;
-  font-size: 12px;
-  color: #6b7280;
+  margin: 5px 0;
 }
 </style>
 </head>
-
 <body>
 
-<header>🌎 Alerta Sísmica México - Monitor en Tiempo Real</header>
+<header>
+  <div>🛰️ Centro de Monitoreo Sísmico México</div>
+  <div id="clock"></div>
+</header>
 
-<div class="container">
-
-<button onclick="fetchEarthquakes()">🔄 Actualizar</button>
-<div id="status">Obteniendo ubicación...</div>
-
-<div id="map"></div>
-
-<h3>📋 Sismos recientes</h3>
-<ul id="earthquakeList"></ul>
-
+<div id="panel">
+  <div id="map"></div>
+  <div id="list">
+    <h3>Últimos sismos</h3>
+    <ul id="eqList"></ul>
+  </div>
 </div>
 
-<footer>
-Datos: USGS | Proyecto educativo | No reemplaza sistemas oficiales SASMEX
-</footer>
-
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
-let userLocation = null;
-let map;
-let markers = [];
+let map = L.map("map").setView([19.4,-99.1],5);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-// ================== MAPA ===================
-function initMap() {
-  map = L.map("map").setView([19.4326, -99.1332], 5);
+// Reloj
+setInterval(()=> {
+ document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+},1000);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap"
-  }).addTo(map);
+// Sismos
+async function loadEQ(){
+ const res = await fetch("https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson");
+ const data = await res.json();
+ const list = document.getElementById("eqList");
+ list.innerHTML="";
+
+ data.features.slice(0,10).forEach(eq=>{
+   const mag = eq.properties.mag;
+   const place = eq.properties.place;
+   const lat = eq.geometry.coordinates[1];
+   const lon = eq.geometry.coordinates[0];
+
+   if(lat<14||lat>33||lon<-118||lon>-86) return;
+
+   L.circleMarker([lat,lon],{radius:mag*2,color:"red"}).addTo(map);
+
+   const li=document.createElement("li");
+   li.textContent=`M ${mag} - ${place}`;
+   list.appendChild(li);
+ });
 }
 
-// ================== GEOLOCALIZACIÓN ===================
-function getUserLocation() {
-  if (!navigator.geolocation) {
-    document.getElementById("status").textContent = "❌ GPS no soportado";
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLocation = {
-      lat: pos.coords.latitude,
-      lon: pos.coords.longitude
-    };
-    document.getElementById("status").textContent =
-      `📍 Ubicación: ${userLocation.lat.toFixed(2)}, ${userLocation.lon.toFixed(2)}`;
-
-    L.marker([userLocation.lat, userLocation.lon]).addTo(map)
-      .bindPopup("📍 Tu ubicación")
-      .openPopup();
-
-    fetchEarthquakes();
-  }, () => {
-    document.getElementById("status").textContent = "⚠️ No se pudo obtener GPS";
-  });
-}
-
-// ================== DISTANCIA ===================
-function distanceKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-}
-
-// ================== OBTENER SISMOS ===================
-async function fetchEarthquakes() {
-  const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
-  const list = document.getElementById("earthquakeList");
-  list.innerHTML = "";
-
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-
-    addEarthquakesToMap(data);
-
-    data.features.forEach(eq => {
-      const mag = eq.properties.mag;
-      const place = eq.properties.place;
-      const lat = eq.geometry.coordinates[1];
-      const lon = eq.geometry.coordinates[0];
-
-      // SOLO MÉXICO
-      if (lat < 14 || lat > 33 || lon < -118 || lon > -86) return;
-
-      let dist = userLocation ? distanceKm(userLocation.lat, userLocation.lon, lat, lon) : 0;
-      const time = new Date(eq.properties.time).toLocaleString("es-MX");
-
-      const li = document.createElement("li");
-      li.innerHTML = `
-        <b>Magnitud:</b> ${mag}<br>
-        <b>Lugar:</b> ${place}<br>
-        <b>Distancia:</b> ${dist.toFixed(1)} km<br>
-        <b>Hora:</b> ${time}
-      `;
-
-      if (mag < 4) li.classList.add("light");
-      else if (mag < 6) li.classList.add("moderate");
-      else li.classList.add("strong");
-
-      list.appendChild(li);
-
-      // ALERTA FUERTE
-      if (mag >= 5 && dist < 150) {
-        alert("🚨 SISMO FUERTE CERCA: Magnitud " + mag);
-      }
-    });
-
-  } catch (e) {
-    console.error(e);
-    document.getElementById("status").textContent = "❌ Error cargando datos";
-  }
-}
-
-// ================== MAPA MARCADORES ===================
-function addEarthquakesToMap(data) {
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-
-  data.features.forEach(eq => {
-    const mag = eq.properties.mag;
-    const place = eq.properties.place;
-    const lat = eq.geometry.coordinates[1];
-    const lon = eq.geometry.coordinates[0];
-
-    if (lat < 14 || lat > 33 || lon < -118 || lon > -86) return;
-
-    let color = "green";
-    if (mag >= 4) color = "orange";
-    if (mag >= 6) color = "red";
-
-    const marker = L.circleMarker([lat, lon], {
-      radius: mag * 2,
-      color: color,
-      fillOpacity: 0.7
-    }).addTo(map);
-
-    marker.bindPopup(`<b>Magnitud:</b> ${mag}<br>${place}`);
-
-    markers.push(marker);
-  });
-}
-
-// ================== AUTO UPDATE ===================
-setInterval(fetchEarthquakes, 60000);
-
-// INICIAR
-initMap();
-getUserLocation();
+loadEQ();
+setInterval(loadEQ,60000);
 </script>
 
 </body>
