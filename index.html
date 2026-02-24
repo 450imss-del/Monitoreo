@@ -1,155 +1,188 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoreo de Sismos en México</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f9f9f9;
-        }
-        h1 {
-            color: #333;
-        }
-        button {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 5px;
-            background-color: #4CAF50;
-            color: white;
-            cursor: pointer;
-            font-size: 16px;
-            margin-bottom: 20px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        ul {
-            list-style-type: none;
-            padding: 0;
-        }
-        li {
-            margin: 10px 0;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #fff;
-        }
-        .light {
-            border-left: 5px solid green;
-        }
-        .moderate {
-            border-left: 5px solid orange;
-        }
-        .strong {
-            border-left: 5px solid red;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alerta Sísmica México - Monitor en Tiempo Real</title>
+
+<!-- ESTILOS -->
+<style>
+* {
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    background: #0f172a;
+    color: #fff;
+}
+
+header {
+    background: #111827;
+    padding: 15px;
+    text-align: center;
+    font-size: 20px;
+    font-weight: bold;
+    border-bottom: 2px solid #22c55e;
+}
+
+.container {
+    padding: 15px;
+    max-width: 900px;
+    margin: auto;
+}
+
+button {
+    padding: 12px 18px;
+    border: none;
+    border-radius: 8px;
+    background: #22c55e;
+    color: black;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+button:hover {
+    background: #16a34a;
+}
+
+.status {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #9ca3af;
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+}
+
+li {
+    margin: 10px 0;
+    padding: 12px;
+    border-radius: 8px;
+    background: #111827;
+    border-left: 6px solid gray;
+}
+
+.light { border-left-color: #22c55e; }
+.moderate { border-left-color: #f59e0b; }
+.strong { border-left-color: #ef4444; }
+
+footer {
+    text-align: center;
+    padding: 10px;
+    font-size: 12px;
+    color: #6b7280;
+}
+</style>
 </head>
+
 <body>
-    <h1>Monitoreo de Sismos en México</h1>
-    <button onclick="fetchEarthquakes()">Actualizar Datos</button>
-    <ul id="earthquakeList" aria-live="polite"></ul>
 
-    <script>
-        let userLocation;
+<header>🌎 Alerta Sísmica México - Monitoreo en Tiempo Real</header>
 
-        // Función para obtener la ubicación del usuario
-        function getUserLocation() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(position => {
-                    userLocation = {
-                        latitude: position.coords.latitude,
-                        longitude: position.coords.longitude
-                    };
-                    fetchEarthquakes(); // Llama a la función después de obtener la ubicación
-                }, showError);
-            } else {
-                alert("La geolocalización no es compatible con este navegador.");
-            }
+<div class="container">
+
+<button onclick="fetchEarthquakes()">🔄 Actualizar ahora</button>
+<div class="status" id="status">Obteniendo ubicación...</div>
+
+<ul id="earthquakeList"></ul>
+
+</div>
+
+<footer>
+Datos: USGS | Proyecto educativo | No reemplaza sistemas oficiales (SASMEX)
+</footer>
+
+<script>
+let userLocation = null;
+
+// Obtener ubicación
+function getUserLocation() {
+    if (!navigator.geolocation) {
+        document.getElementById("status").textContent = "❌ Geolocalización no soportada.";
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(pos => {
+        userLocation = {
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude
+        };
+        document.getElementById("status").textContent = 
+            `📍 Ubicación detectada: ${userLocation.lat.toFixed(2)}, ${userLocation.lon.toFixed(2)}`;
+        fetchEarthquakes();
+    }, err => {
+        document.getElementById("status").textContent = "⚠️ No se pudo obtener ubicación.";
+    });
+}
+
+// Distancia Haversine
+function distanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+// Obtener sismos
+async function fetchEarthquakes() {
+    const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+    const list = document.getElementById("earthquakeList");
+    list.innerHTML = "";
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!userLocation) {
+            document.getElementById("status").textContent = "⚠️ Activa GPS.";
+            return;
         }
 
-        // Función para mostrar errores de geolocalización
-        function showError(error) {
-            switch(error.code) {
-                case error.PERMISSION_DENIED:
-                    alert("No se permite la geolocalización.");
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    alert("La ubicación no está disponible.");
-                    break;
-                case error.TIMEOUT:
-                    alert("La solicitud de geolocalización ha expirado.");
-                    break;
-                case error.UNKNOWN_ERROR:
-                    alert("Se ha producido un error desconocido.");
-                    break;
-            }
-        }
+        data.features.forEach(eq => {
+            const mag = eq.properties.mag;
+            const place = eq.properties.place;
+            const lat = eq.geometry.coordinates[1];
+            const lon = eq.geometry.coordinates[0];
 
-        // Función para calcular la distancia entre dos puntos
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Radio de la Tierra en kilómetros
-            const dLat = (lat2 - lat1) * (Math.PI / 180);
-            const dLon = (lon2 - lon1) * (Math.PI / 180);
-            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-                      Math.sin(dLon/2) * Math.sin(dLon/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c; // Distancia en kilómetros
-        }
+            // Bounding box México
+            if (lat < 14 || lat > 33 || lon < -118 || lon > -86) return;
 
-        // Función para obtener y filtrar los sismos
-        async function fetchEarthquakes() {
-            const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
-            try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Error en la recuperación de datos');
-                
-                const data = await response.json();
-                const list = document.getElementById('earthquakeList');
-                list.innerHTML = ''; // Limpiar la lista antes de agregar nuevos datos
+            const dist = distanceKm(userLocation.lat, userLocation.lon, lat, lon);
+            const time = new Date(eq.properties.time).toLocaleString("es-MX");
 
-                if (!userLocation) {
-                    alert("Por favor, habilita la geolocalización en tu navegador.");
-                    return;
-                }
+            const li = document.createElement("li");
+            li.innerHTML = `
+                <b>Magnitud:</b> ${mag} <br>
+                <b>Zona:</b> ${place} <br>
+                <b>Distancia:</b> ${dist.toFixed(1)} km <br>
+                <b>Hora:</b> ${time}
+            `;
 
-                data.features.forEach(earthquake => {
-                    const place = earthquake.properties.place;
-                    const magnitude = earthquake.properties.mag;
-                    const lat = earthquake.geometry.coordinates[1];
-                    const lon = earthquake.geometry.coordinates[0];
-                    const distance = calculateDistance(userLocation.latitude, userLocation.longitude, lat, lon);
+            if (mag < 4) li.classList.add("light");
+            else if (mag < 6) li.classList.add("moderate");
+            else li.classList.add("strong");
 
-                    // Filtrar sismos que contienen "México" y están dentro de 200 km
-                    if ((place.includes("Mexico") || place.includes("México")) && distance <= 200) {
-                        const time = new Date(earthquake.properties.time).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+            list.appendChild(li);
+        });
 
-                        const listItem = document.createElement('li');
-                        listItem.textContent = `Sismo de magnitud ${magnitude} en ${place} a ${distance.toFixed(2)} km de tu ubicación a las ${time}`;
-                        
-                        // Clasificación de magnitudes
-                        if (magnitude < 4.0) {
-                            listItem.classList.add('light');
-                        } else if (magnitude < 6.0) {
-                            listItem.classList.add('moderate');
-                        } else {
-                            listItem.classList.add('strong');
-                        }
-                        
-                        list.appendChild(listItem);
-                    }
-                });
-            } catch (error) {
-                console.error(error);
-                document.getElementById('earthquakeList').textContent = 'No se pudieron cargar los datos.';
-            }
-        }
+    } catch (e) {
+        document.getElementById("status").textContent = "❌ Error cargando datos.";
+        console.error(e);
+    }
+}
 
-        getUserLocation(); // Llama a la función para obtener la ubicación del usuario
-    </script>
+// Auto actualización cada 60s
+setInterval(fetchEarthquakes, 60000);
+
+getUserLocation();
+</script>
+
 </body>
 </html>
