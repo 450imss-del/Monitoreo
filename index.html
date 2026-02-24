@@ -2,231 +2,203 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<title>MONITOREO SÍSMICO TV</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Centro de Monitoreo Sísmico</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<!-- LEAFLET MAPA -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{
-  margin:0;
-  background:#000;
-  color:white;
+body {
+  margin: 0;
+  background: #000;
+  color: #0f0;
   font-family: Arial, sans-serif;
-  overflow:hidden;
 }
 
-/* Barra superior */
-#statusBar{
-  background:#0a0;
-  padding:10px;
-  font-size:22px;
-  font-weight:bold;
-  text-align:center;
-}
-.alerta{
-  background:red !important;
+header {
+  background: #111;
+  padding: 10px;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  border-bottom: 2px solid red;
 }
 
-/* Layout */
-#container{
-  display:grid;
-  grid-template-columns: 70% 30%;
-  height:calc(100vh - 60px);
+#panel {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  height: 90vh;
 }
 
-/* Mapa */
-#map{
-  height:100%;
+#map {
+  height: 100%;
 }
 
-/* Panel lateral */
-#panel{
-  padding:10px;
-  border-left:2px solid #333;
-  font-size:16px;
+#info {
+  padding: 15px;
+  background: #050505;
+  border-left: 2px solid red;
 }
 
-/* Lista */
-li{
-  border-bottom:1px solid #333;
-  padding:6px;
+.card {
+  background: #111;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #0f0;
+  border-radius: 5px;
 }
 
-/* Reloj */
-#clock{
-  font-size:20px;
-  text-align:center;
-  margin-bottom:10px;
+button {
+  padding: 12px;
+  font-size: 16px;
+  background: red;
+  border: none;
+  color: white;
+  width: 100%;
+  cursor: pointer;
+  font-weight: bold;
 }
 
-/* Ticker noticias */
-#ticker{
-  position:fixed;
-  bottom:0;
-  width:100%;
-  background:black;
-  color:#00ff00;
-  font-size:20px;
-  padding:5px 0;
-  overflow:hidden;
-  white-space:nowrap;
-}
-#tickerText{
-  display:inline-block;
-  padding-left:100%;
-  animation: scroll 25s linear infinite;
-}
-@keyframes scroll{
-  from{ transform:translateX(0%); }
-  to{ transform:translateX(-100%); }
+button:hover {
+  background: #ff3333;
 }
 
-/* Botón simulacro */
-#simBtn{
-  position:fixed;
-  bottom:50px;
-  right:20px;
-  background:red;
-  color:white;
-  border:none;
-  padding:12px 18px;
-  font-size:16px;
-  border-radius:6px;
-  cursor:pointer;
-  z-index:9999;
+#ticker {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: red;
+  color: white;
+  font-size: 20px;
+  padding: 5px;
+  white-space: nowrap;
+  overflow: hidden;
 }
-#simBtn:hover{ background:darkred; }
 
-/* Parpadeo alerta */
-.flash{
-  animation: flash 0.5s infinite alternate;
+#ticker span {
+  display: inline-block;
+  padding-left: 100%;
+  animation: scroll 15s linear infinite;
 }
-@keyframes flash{
-  from{background:#000;}
-  to{background:#400;}
+
+@keyframes scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+.alerta {
+  color: red;
+  font-size: 22px;
+  font-weight: bold;
 }
 </style>
 </head>
 
 <body>
 
-<div id="statusBar">🟢 ESTADO ACTUAL: SIN ALERTAS</div>
+<header>🌎 PANEL DE MONITOREO SÍSMICO – MODO TV NOTICIAS</header>
 
-<div id="container">
+<div id="panel">
   <div id="map"></div>
-  <div id="panel">
-    <div id="clock"></div>
-    <h3>📊 Resumen Hoy</h3>
-    <div id="summary">Cargando...</div>
-    <h3>📍 Últimos Sismos</h3>
-    <ul id="quakeList"></ul>
+
+  <div id="info">
+    <div class="card">
+      <h3>📡 Último Sismo</h3>
+      <div id="datos"></div>
+    </div>
+
+    <div class="card">
+      <h3>⚠️ Estado del Sistema</h3>
+      <div id="estado">Activo en tiempo real</div>
+    </div>
+
+    <div class="card">
+      <button onclick="simulacro()">🚨 SIMULAR SISMO FUERTE</button>
+    </div>
   </div>
 </div>
 
-<div id="ticker">
-  <span id="tickerText">Sistema de monitoreo sísmico en tiempo real - USGS</span>
-</div>
-
-<button id="simBtn" onclick="simulateQuake()">🚨 SIMULAR SISMO</button>
-
-<audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="ticker"><span id="tickerText">Cargando noticias sísmicas...</span></div>
 
 <script>
-// MAPA
-const map = L.map('map').setView([19.4326, -99.1332], 5);
+// ================== API URLs ==================
+const API = "https://monitoreo-api.onrender.com/api/sismo";
+const SIM = "https://monitoreo-api.onrender.com/api/simulacro";
+const TICKER = "https://monitoreo-api.onrender.com/api/ticker";
+
+// ================== MAPA ==================
+let map = L.map('map').setView([19.43, -99.13], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let marker;
 
-let markers = [];
+// ================== CARGAR SISMO ==================
+async function cargarSismo() {
+  let r = await fetch(API);
+  let d = await r.json();
 
-// RELOJ
-setInterval(()=>{
-  document.getElementById("clock").innerHTML = "🕒 " + new Date().toLocaleString();
-},1000);
-
-// CARGAR SISMOS
-async function loadQuakes(){
-  const url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
-  const res = await fetch(url);
-  const data = await res.json();
-
-  markers.forEach(m=>map.removeLayer(m));
-  markers = [];
-
-  let maxMag = 0;
-  let count = 0;
-  let lastText = "";
-
-  const list = document.getElementById("quakeList");
-  list.innerHTML = "";
-
-  data.features.forEach(q=>{
-    const mag = q.properties.mag;
-    const place = q.properties.place;
-    const time = new Date(q.properties.time).toLocaleString("es-MX");
-    const lat = q.geometry.coordinates[1];
-    const lon = q.geometry.coordinates[0];
-
-    if(place.includes("Mexico") || place.includes("México")){
-      count++;
-      if(mag > maxMag) maxMag = mag;
-      lastText = `ÚLTIMO SISMO: M${mag} en ${place} - ${time}`;
-
-      let color = mag < 3 ? "green" : mag < 5 ? "yellow" : mag < 6 ? "orange" : "red";
-
-      const marker = L.circleMarker([lat,lon],{
-        radius:6,
-        color:color,
-        fillColor:color,
-        fillOpacity:0.8
-      }).addTo(map)
-      .bindPopup(`M${mag} - ${place}`);
-
-      markers.push(marker);
-
-      const li = document.createElement("li");
-      li.innerHTML = `M${mag} - ${place} <br><small>${time}</small>`;
-      li.style.color = color;
-      list.appendChild(li);
-
-      // ALERTA AUTOMÁTICA
-      if(mag >= 6){
-        activateAlert(mag, place);
-      }
-    }
-  });
-
-  document.getElementById("summary").innerHTML =
-    `🌎 Sismos hoy: ${count}<br>⚠️ Mayor magnitud: ${maxMag}`;
-
-  document.getElementById("tickerText").innerHTML = lastText || "Sin sismos recientes";
+  mostrarDatos(d);
+  ponerMarker(d);
+  detectarAlerta(d);
 }
 
-// ALERTA REAL
-function activateAlert(mag, place){
-  const status = document.getElementById("statusBar");
-  status.classList.add("alerta");
-  status.innerHTML = `🚨 ALERTA SÍSMICA M${mag} - ${place}`;
-  document.body.classList.add("flash");
-  document.getElementById("alarm").play();
+// ================== MOSTRAR DATOS ==================
+function mostrarDatos(d) {
+  document.getElementById("datos").innerHTML = `
+    Fuente: ${d.fuente}<br>
+    Magnitud: <b>${d.magnitud}</b><br>
+    Profundidad: ${d.profundidad} km<br>
+    Hora UTC: ${d.hora}<br>
+    Lat: ${d.lat}<br>
+    Lon: ${d.lon}
+  `;
 }
 
-// SIMULACRO
-function simulateQuake(){
-  activateAlert(7.5, "SIMULADO CDMX");
-  setTimeout(()=>{
-    document.getElementById("statusBar").classList.remove("alerta");
-    document.getElementById("statusBar").innerHTML="🟢 ESTADO ACTUAL: SIN ALERTAS";
-    document.body.classList.remove("flash");
-  },10000);
+// ================== MARKER MAPA ==================
+function ponerMarker(d) {
+  if (marker) map.removeLayer(marker);
+  marker = L.marker([d.lat, d.lon]).addTo(map)
+    .bindPopup(`Magnitud ${d.magnitud}`).openPopup();
+  map.setView([d.lat, d.lon], 6);
 }
 
-// REFRESH CADA 1 MINUTO
-loadQuakes();
-setInterval(loadQuakes, 60000);
+// ================== ALERTA FUERTE ==================
+function detectarAlerta(d) {
+  if (d.magnitud >= 6) {
+    document.getElementById("estado").innerHTML = 
+      "<div class='alerta'>🚨 ALERTA SISMO FUERTE</div>";
+    let audio = new Audio("https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3");
+    audio.play();
+  } else {
+    document.getElementById("estado").innerHTML = "Sin alertas críticas";
+  }
+}
+
+// ================== SIMULACRO ==================
+async function simulacro() {
+  let r = await fetch(SIM);
+  let d = await r.json();
+  mostrarDatos(d);
+  ponerMarker(d);
+  alert("SIMULACRO ACTIVADO");
+}
+
+// ================== TICKER NOTICIAS ==================
+async function cargarTicker() {
+  let r = await fetch(TICKER);
+  let d = await r.json();
+  document.getElementById("tickerText").innerText = "🔴 " + d.mensaje;
+}
+
+// ================== AUTO REFRESH ==================
+cargarSismo();
+cargarTicker();
+
+setInterval(cargarSismo, 5000);   // cada 5 segundos
+setInterval(cargarTicker, 8000); // ticker
+
 </script>
 
 </body>
-</html>
+  </html>
